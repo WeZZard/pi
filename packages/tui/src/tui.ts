@@ -428,6 +428,30 @@ export class Container implements Component {
  */
 const SEGMENT_RESET = "\x1b[0m\x1b]8;;\x07";
 
+/**
+ * Remove background-colour parameters from SGR sequences while keeping foreground and
+ * attribute codes. The final cell of a full-width line is written after the row reset, so
+ * its background must stay default or the next erase-in-line inherits this row's colour.
+ */
+function stripBackgroundSgr(text: string): string {
+	return text.replace(/\x1b\[([0-9;]*)m/g, (match, params: string) => {
+		if (params === "") return match;
+		const parts = params.split(";").filter((part) => part !== "");
+		const kept: string[] = [];
+		for (let index = 0; index < parts.length; index++) {
+			const code = Number(parts[index]);
+			if (code === 48) {
+				const mode = Number(parts[index + 1]);
+				index += mode === 2 ? 4 : mode === 5 ? 2 : 0;
+				continue;
+			}
+			if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107) || code === 49) continue;
+			kept.push(parts[index]);
+		}
+		return kept.length === 0 ? "" : `\x1b[${kept.join(";")}m`;
+	});
+}
+
 /** Composite overlay content into a terminal line at a fixed column. */
 export function compositeTuiLine(
 	baseLine: string,
@@ -1463,6 +1487,28 @@ export abstract class TuiBase extends Container implements TUI {
 			}
 		}
 		return lines;
+	}
+
+	/**
+	 * Move the trailing reset before the final cell of a full-width line.
+	 *
+	 * A styled line that fills the width puts its reset exactly at the right margin. With
+	 * autowrap disabled the cursor is in the pending-wrap state there, and some terminals
+	 * (Rex Beta) drop SGR sequences received in that state, so the row's background survives
+	 * into the next erase-in-line. Writing the last cell after the reset leaves the pen at
+	 * the default background.
+	 */
+	protected resetBeforeLastCell(line: string, width: number): string {
+		if (isImageLine(line)) return line;
+		const lineWidth = visibleWidth(line);
+		if (lineWidth < width) return line;
+		const fitted = lineWidth > width ? sliceByColumn(line, 0, width, true) : line;
+		const head = sliceByColumn(fitted, 0, width - 1, true);
+		const tail = stripBackgroundSgr(sliceByColumn(fitted, width - 1, 1, true)) || " ";
+		// Codes that follow the last cell (e.g. an italic-off or the trailing reset) stay after
+		// it, so styles that end beyond the final column are not lost.
+		const trailing = sliceByColumn(fitted, width, 1, true);
+		return `${head}${SEGMENT_RESET}${tail}${trailing}`;
 	}
 
 	private compositeLineAt(

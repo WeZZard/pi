@@ -93,6 +93,31 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
+	it("resets the background before the last cell of a full-width line", async () => {
+		const terminal = new RecordingTerminal(20, 4);
+		const tui = new TuiAltScreen(terminal);
+		const green = "\x1b[48;2;37;65;49m";
+		tui.addChild({
+			render: () => [`${green}${" ".repeat(20)}`],
+			invalidate() {},
+		});
+
+		tui.start();
+		await terminal.waitForRender();
+		const output = terminal.events
+			.filter((event) => event.type === "write")
+			.map((event) => event.data)
+			.join("");
+
+		// A terminal in the pending-wrap state may drop a reset that arrives at the right
+		// margin, leaving the row's background to bleed into the next erase-in-line.
+		assert.ok(
+			output.includes(`${green}${" ".repeat(19)}\x1b[0m\x1b]8;;\x07 `),
+			"the reset must precede the final cell, which is written with the default background",
+		);
+		tui.stop();
+	});
+
 	it("renders a terminal-height viewport and preserves manual scroll position", async () => {
 		const terminal = new VirtualTerminal(20, 4);
 		const tui = new TuiAltScreen(terminal);

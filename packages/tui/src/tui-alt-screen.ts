@@ -412,7 +412,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 				line.replace(OSC133_ZONE_PREFIX, ""),
 			);
 			this.lastDocument = this.applyLineResets(documentLines.map((line) => line.replaceAll(CURSOR_MARKER, ""))).map(
-				(line) => (isImageLine(line) || visibleWidth(line) <= width ? line : sliceByColumn(line, 0, width, true)),
+				(line) => this.resetBeforeLastCell(line, width),
 			);
 			let buffer = `${BEGIN_SYNCHRONIZED_OUTPUT}${EXIT_ALT_SCREEN}${DISABLE_AUTOWRAP}`;
 			for (let row = 0; row < this.lastDocument.length; row++) {
@@ -1709,10 +1709,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		screen = this.compositeFlashes(screen, width, height);
 
 		const cursorPos = this.extractCursorPosition(screen, height);
-		screen = this.applyLineResets(screen).map((line) => {
-			if (isImageLine(line) || visibleWidth(line) <= width) return line;
-			return sliceByColumn(line, 0, width, true);
-		});
+		screen = this.applyLineResets(screen).map((line) => this.resetBeforeLastCell(line, width));
 
 		const fullRedraw =
 			this.previousScreen.length === 0 || this.previousScreenWidth !== width || this.previousScreenHeight !== height;
